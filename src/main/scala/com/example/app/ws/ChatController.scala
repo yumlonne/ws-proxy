@@ -10,6 +10,7 @@ import org.scalatra.json.{JValueResult, JacksonJsonSupport}
 import org.scalatra.scalate.ScalateSupport
 
 import com.example.app.model.repository.RoomRepository
+import com.example.app.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -30,22 +31,33 @@ class ChatController extends ScalatraServlet
       userId <- params.get("user_id")
       room   <- RoomRepository.data.get(params("room"))
       _ <- Some(println(s"users ->${room.users}"))
-      if room.users contains userId
+      if room.users.find(_ == (userId -> Ready)).isDefined
     } yield room
     println(s"clientOpt => ${roomOpt.isDefined}")
 
-    roomOpt.getOrElse(DenyAtmosphereClient)
+    roomOpt.fold(DenyAtmosphereClient) { room =>
+      val userId = params("user_id")
+      var next = true
+      while (next) {
+        val cnt = room.users.count(_._2 == Waiting)
+        if (cnt == 0) {
+          room.users.update(userId, Waiting)
+          next = false
+        }
+        Thread.sleep(100)
+      }
+      room
+    }
   }
 
   lazy val DenyAtmosphereClient: AtmosphereClient = new AtmosphereClient {
     def receive = {
       case Connected =>
-        send("access denied.")
-        Disconnected(ServerDisconnected, None)
+        broadcast("access denied.", Everyone)
       case Disconnected(disconnector, _) =>
         broadcast("called disconnected", Everyone)
       case _ =>
-        send("access denied.")
+        broadcast("access denied.", Everyone)
     }
   }
 

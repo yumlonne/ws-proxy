@@ -8,7 +8,7 @@ import org.scalatra.json.{JValueResult, JacksonJsonSupport}
 import org.scalatra.scalate.ScalateSupport
 
 import com.example.app.model.repository.RoomRepository
-import com.example.app.model.Room
+import com.example.app.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -26,10 +26,13 @@ class MyScalatraServlet extends ScalatraServlet
 
   get("/create/room") {
     val roomId = java.util.UUID.randomUUID.toString
-    val room = new Room(roomId, collection.mutable.ArrayBuffer[String]()) {
+    val room = new Room(roomId, collection.mutable.Map()) {
       def receive = {
         case Connected =>
-          broadcast("Connected")
+          val Some((userId, status)) = this.users.find(_._2 == Waiting)
+          val newStatus = Working(uuid)
+          this.users.update(userId, newStatus)
+          broadcast(s"Connected -> $uuid", Everyone)
         case TextMessage(text) => broadcast("ECHO: " + text, Everyone)
       }
     }
@@ -56,7 +59,7 @@ class MyScalatraServlet extends ScalatraServlet
       }"""
     , room => {
         val userId = java.util.UUID.randomUUID.toString
-        room.users += userId
+        room.users += (userId -> Ready)
 
         s"""{
           "is_success":true,
@@ -75,6 +78,7 @@ class MyScalatraServlet extends ScalatraServlet
       room <- RoomRepository.data.get(roomId).toRight(s"not found: room $roomId")
       message <- params.get("message").toRight("message required")
     } {
+      // FIXME: filter
       val filter = new Everyone
       room.broadcast(message, filter)
     }
