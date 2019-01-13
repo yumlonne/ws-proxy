@@ -1,8 +1,13 @@
 FROM hseeberger/scala-sbt
 
-WORKDIR /root/project
-RUN git clone https://github.com/yumlonne/ws-proxy
+COPY project /root/project/ws-proxy/project
+COPY build.sbt /root/project/ws-proxy/build.sbt
 WORKDIR /root/project/ws-proxy
+RUN sbt clean
+RUN sbt reload update
+COPY . /root/project/ws-proxy
+WORKDIR /root/project/ws-proxy
+RUN sbt clean
 RUN sbt compile
 
 EXPOSE 9000
