@@ -6,10 +6,11 @@ import org.json4s.JsonDSL._
 import org.json4s._
 import org.scalatra._
 import org.scalatra.atmosphere._
+import org.atmosphere.cpr.AtmosphereResource
 import org.scalatra.json.{JValueResult, JacksonJsonSupport}
 import org.scalatra.scalate.ScalateSupport
 
-import com.example.app.model.repository.RoomRepository
+import com.example.app.model.repository.UserRepository
 import com.example.app.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -23,15 +24,11 @@ class ChatController extends ScalatraServlet
 
   implicit protected val jsonFormats: Formats = DefaultFormats
 
-  atmosphere("/chat/:room") {
-    println("userId:" + params.get("user_id"))
-    println("roomId:" + params("room"))
-    println("room: +" + RoomRepository.data.get(params("room")))
+  atmosphere("/chat") {
     val roomOpt = for {
       userId <- params.get("user_id")
-      room   <- RoomRepository.data.get(params("room"))
-      _ <- Some(println(s"users ->${room.users}"))
-      if room.users.find(_ == (userId -> Ready)).isDefined
+      room   <- Some(RoomClient)
+      if UserRepository.data.find(_ == (userId -> Ready)).isDefined
     } yield room
     println(s"clientOpt => ${roomOpt.isDefined}")
 
@@ -39,14 +36,48 @@ class ChatController extends ScalatraServlet
       val userId = params("user_id")
       var next = true
       while (next) {
-        val cnt = room.users.count(_._2 == Waiting)
+        val cnt = UserRepository.data.count(_._2 == Waiting)
         if (cnt == 0) {
-          room.users.update(userId, Waiting)
+          UserRepository.data.update(userId, Waiting)
           next = false
         }
         Thread.sleep(100)
       }
       room
+    }
+  }
+
+  get("/post") {
+    val targets = params.get("targets").map(_.split(",").toSeq).getOrElse(Seq())
+    val message = params.get("message").getOrElse("Touch")
+
+    println(targets)
+
+    // FIXME: filter
+    val filter = new ClientFilter(null) {
+      def apply(v1: AtmosphereResource): Boolean = {
+        val uuids = UserRepository.data.filter(targets contains _._1).values.collect {
+          case Working(uuid) => uuid
+        }.toSeq
+        println(uuids)
+        println(v1.uuid)
+
+        val res = uuids.contains(v1.uuid)
+        println(res)
+        res
+      }
+    }
+    RoomClient.broadcast(message, filter)
+  }
+
+  lazy val RoomClient = new AtmosphereClient {
+    def receive = {
+      case Connected =>
+        val Some((userId, status)) = UserRepository.data.find(_._2 == Waiting)
+        val newStatus = Working(uuid)
+        UserRepository.data.update(userId, newStatus)
+        broadcast(s"Connected -> $uuid", Everyone)
+      case TextMessage(text) => broadcast("ECHO: " + text, Everyone)
     }
   }
 

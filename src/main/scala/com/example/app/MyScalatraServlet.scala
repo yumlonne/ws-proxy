@@ -7,81 +7,24 @@ import org.scalatra.atmosphere._
 import org.scalatra.json.{JValueResult, JacksonJsonSupport}
 import org.scalatra.scalate.ScalateSupport
 
-import com.example.app.model.repository.RoomRepository
+import com.example.app.model.repository.UserRepository
 import com.example.app.model._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
-class MyScalatraServlet extends ScalatraServlet
-  with ScalateSupport
-  with JValueResult
-  with JacksonJsonSupport
-  with SessionSupport
-  with AtmosphereSupport {
-  implicit protected val jsonFormats: Formats = DefaultFormats
+class MyScalatraServlet extends ScalatraServlet {
 
   get("/") {
     views.html.hello()
   }
 
-  get("/create/room") {
-    val roomId = java.util.UUID.randomUUID.toString
-    val room = new Room(roomId, collection.mutable.Map()) {
-      def receive = {
-        case Connected =>
-          val Some((userId, status)) = this.users.find(_._2 == Waiting)
-          val newStatus = Working(uuid)
-          this.users.update(userId, newStatus)
-          broadcast(s"Connected -> $uuid", Everyone)
-        case TextMessage(text) => broadcast("ECHO: " + text, Everyone)
-      }
-    }
-
-    RoomRepository.data += roomId -> room
-
-    // response
+  get("/new") {
+    val userId = java.util.UUID.randomUUID.toString
+    UserRepository.data += (userId -> Ready)
     s"""{
       "is_success":true,
-      "room_id":"$roomId"
+      "user_id":"$userId"
     }"""
-  }
-
-  get("/add/user") {
-    val roomEither: Either[String, Room] = for {
-      roomId <- params.get("room_id").toRight("room_id required")
-      room   <- RoomRepository.data.get(roomId).toRight(s"not found: room $roomId")
-    } yield room
-
-    roomEither.fold(reason =>
-      s"""{
-        "is_success":false,
-        "reason":"$reason"
-      }"""
-    , room => {
-        val userId = java.util.UUID.randomUUID.toString
-        room.users += (userId -> Ready)
-
-        s"""{
-          "is_success":true,
-          "user_id":"$userId"
-        }"""
-      }
-    )
-  }
-
-  get("/post/:room_id") {
-    val roomId = params("room_id")
-    val targetsOpt = params.get("targets")
-    val excludes = params.get("excludes").getOrElse(Seq[String]())
-
-    for {
-      room <- RoomRepository.data.get(roomId).toRight(s"not found: room $roomId")
-      message <- params.get("message").toRight("message required")
-    } {
-      // FIXME: filter
-      val filter = new Everyone
-      room.broadcast(message, filter)
-    }
   }
 
 }
