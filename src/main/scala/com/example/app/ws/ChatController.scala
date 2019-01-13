@@ -23,24 +23,29 @@ class ChatController extends ScalatraServlet
   implicit protected val jsonFormats: Formats = DefaultFormats
 
   atmosphere("/chat/:room") {
-    val clientOpt = for {
+    println("userId:" + params.get("user_id"))
+    println("roomId:" + params("room"))
+    println("room: +" + RoomRepository.data.get(params("room")))
+    val roomOpt = for {
       userId <- params.get("user_id")
       room   <- RoomRepository.data.get(params("room"))
+      _ <- Some(println(s"users ->${room.users}"))
       if room.users contains userId
-    } yield room.atmoClient
-    println(s"clientOpt => ${clientOpt.isDefined}")
+    } yield room
+    println(s"clientOpt => ${roomOpt.isDefined}")
 
-    clientOpt.getOrElse(DenyAtmosphereClient)
+    roomOpt.getOrElse(DenyAtmosphereClient)
   }
 
   lazy val DenyAtmosphereClient: AtmosphereClient = new AtmosphereClient {
     def receive = {
       case Connected =>
         send("access denied.")
-        this.receive(Disconnected)
-      case Disconnected =>
-        send("called disconnected")
+        Disconnected(ServerDisconnected, None)
+      case Disconnected(disconnector, _) =>
+        broadcast("called disconnected", Everyone)
       case _ =>
+        send("access denied.")
     }
   }
 

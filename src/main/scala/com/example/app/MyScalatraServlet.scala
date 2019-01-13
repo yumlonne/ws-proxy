@@ -26,18 +26,13 @@ class MyScalatraServlet extends ScalatraServlet
 
   get("/create/room") {
     val roomId = java.util.UUID.randomUUID.toString
-    val atmoClient = new AtmosphereClient {
+    val room = new Room(roomId, collection.mutable.ArrayBuffer[String]()) {
       def receive = {
         case Connected =>
           broadcast("Connected")
-        case Disconnected(disconnector, Some(error)) =>
-          broadcast(s"Disconnected $disconnector")
-        case Error(Some(error)) =>
         case TextMessage(text) => broadcast("ECHO: " + text, Everyone)
-        case JsonMessage(json) => broadcast(json)
       }
     }
-    val room = Room(roomId, Seq(), atmoClient)
 
     RoomRepository.data += roomId -> room
 
@@ -61,8 +56,7 @@ class MyScalatraServlet extends ScalatraServlet
       }"""
     , room => {
         val userId = java.util.UUID.randomUUID.toString
-        val newRoom = room.copy(users = room.users :+ userId)
-        RoomRepository.data.update(room.id, room)
+        room.users += userId
 
         s"""{
           "is_success":true,
@@ -70,6 +64,20 @@ class MyScalatraServlet extends ScalatraServlet
         }"""
       }
     )
+  }
+
+  get("/post/:room_id") {
+    val roomId = params("room_id")
+    val targetsOpt = params.get("targets")
+    val excludes = params.get("excludes").getOrElse(Seq[String]())
+
+    for {
+      room <- RoomRepository.data.get(roomId).toRight(s"not found: room $roomId")
+      message <- params.get("message").toRight("message required")
+    } {
+      val filter = new Everyone
+      room.broadcast(message, filter)
+    }
   }
 
 }

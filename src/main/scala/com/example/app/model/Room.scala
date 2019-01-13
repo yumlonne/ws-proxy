@@ -1,5 +1,7 @@
 package com.example.app.model
 
+import org.scalatra._
 import org.scalatra.atmosphere._
 
-case class Room(id: String, users: Seq[String], atmoClient: AtmosphereClient)
+abstract class Room(val id: String, val users: collection.mutable.ArrayBuffer[String])
+  extends AtmosphereClient
