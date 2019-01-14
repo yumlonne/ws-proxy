@@ -25,25 +25,20 @@ class ChatController extends ScalatraServlet
   implicit protected val jsonFormats: Formats = DefaultFormats
 
   atmosphere("/chat") {
-    val roomOpt = for {
+    val userOpt = for {
       userId <- params.get("user_id")
-      room   <- Some(RoomClient)
-      if UserRepository.data.find(_ == (userId -> Ready)).isDefined
-    } yield room
-    println(s"clientOpt => ${roomOpt.isDefined}")
+      userStatus <- UserRepository.data.find(_._1 == userId).map(_._2)
+    } yield (userId, userStatus)
 
-    roomOpt.fold(DenyAtmosphereClient) { room =>
-      val userId = params("user_id")
-      var next = true
-      while (next) {
-        val cnt = UserRepository.data.count(_._2 == Waiting)
-        if (cnt == 0) {
-          UserRepository.data.update(userId, Waiting)
-          next = false
+    userOpt.fold(DenyAtmosphereClient) { case (userId, userStatus) =>
+      new AtmosphereClient {
+        def receive = {
+          case Connected =>
+            UserRepository.data.update(userId, Working(uuid))
+            broadcast(s"Connected -> $userId($uuid)", Everyone)
+          case TextMessage(text) => broadcast("ECHO: " + text, Everyone)
         }
-        Thread.sleep(100)
       }
-      room
     }
   }
 
@@ -51,23 +46,16 @@ class ChatController extends ScalatraServlet
     val targets = params.get("targets").map(_.split(",").toSeq).getOrElse(Seq())
     val message = params.get("message").getOrElse("Touch")
 
-    println(targets)
-
-    // FIXME: filter
     val filter = new ClientFilter(null) {
       def apply(v1: AtmosphereResource): Boolean = {
         val uuids = UserRepository.data.filter(targets contains _._1).values.collect {
           case Working(uuid) => uuid
         }.toSeq
-        println(uuids)
-        println(v1.uuid)
 
-        val res = uuids.contains(v1.uuid)
-        println(res)
-        res
+        uuids.contains(v1.uuid)
       }
     }
-    RoomClient.broadcast(message, filter)
+    AtmosphereClient.broadcastAll(message, filter)
   }
 
   lazy val RoomClient = new AtmosphereClient {
